@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="lv">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pieslēgšanās</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; font-family: system-ui, sans-serif;
+      background: linear-gradient(135deg, #1e3a5f, #3b6ea5); color: #1f2937;
+      display: flex; flex-direction: column; align-items: center; padding: 40px 16px;
+    }
+    .card {
+      width: 100%; max-width: 380px; background: #fff; border-radius: 12px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.25); overflow: hidden;
+    }
+    .tabs { display: flex; }
+    .tabs button {
+      flex: 1; padding: 14px; border: 0; background: #e5e7eb; font-size: 15px; cursor: pointer;
+    }
+    .tabs button.active { background: #fff; font-weight: 600; }
+    form, #profile { padding: 24px; display: flex; flex-direction: column; gap: 12px; }
+    label { font-size: 13px; color: #4b5563; display: flex; flex-direction: column; gap: 4px; }
+    input { padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 15px; }
+    button.primary {
+      padding: 11px; border: 0; border-radius: 6px; background: #2563eb; color: #fff;
+      font-size: 15px; cursor: pointer;
+    }
+    button.primary:hover { background: #1d4ed8; }
+    .msg { min-height: 20px; font-size: 14px; margin: 0; }
+    .msg.error { color: #b91c1c; }
+    .msg.ok { color: #15803d; }
+    .hidden { display: none !important; }
+
+    /* Arhitektūras shēma lapas apakšā */
+    .arch { margin-top: 40px; width: 100%; max-width: 640px; color: #fff; text-align: center; }
+    .arch h2 { font-size: 16px; font-weight: 600; margin-bottom: 12px; }
+    .tier {
+      background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.35);
+      border-radius: 8px; padding: 12px; text-align: left;
+    }
+    .tier strong { display: block; }
+    .tier small { opacity: .85; }
+    .arrow { font-size: 18px; line-height: 26px; opacity: .8; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="tabs" id="tabs">
+      <button type="button" class="active" data-tab="login">Pieslēgties</button>
+      <button type="button" data-tab="register">Reģistrēties</button>
+    </div>
+
+    <form id="login-form">
+      <label>Lietotājvārds <input name="username" required autocomplete="username"></label>
+      <label>Parole <input name="password" type="password" required autocomplete="current-password"></label>
+      <button class="primary" type="submit">Pieslēgties</button>
+      <p class="msg" id="login-msg"></p>
+    </form>
+
+    <form id="register-form" class="hidden">
+      <label>Lietotājvārds <input name="username" required minlength="3" maxlength="32" autocomplete="username"></label>
+      <label>E-pasts <input name="email" type="email" required autocomplete="email"></label>
+      <label>Parole <input name="password" type="password" required minlength="8" autocomplete="new-password"></label>
+      <button class="primary" type="submit">Izveidot kontu</button>
+      <p class="msg" id="register-msg"></p>
+    </form>
+
+    <div id="profile" class="hidden">
+      <p>Sveiks, <strong id="profile-name"></strong>!</p>
+      <p class="msg" id="profile-email"></p>
+      <button class="primary" type="button" id="logout">Iziet</button>
+    </div>
+  </div>
+
+  <section class="arch">
+    <h2>3 līmeņu arhitektūra</h2>
+    <div class="tier">
+      <strong>1. Prezentācijas līmenis</strong>
+      <small>Pārlūks · HTML/CSS/JS (šī lapa) · app/static/index.html</small>
+    </div>
+    <div class="arrow">⇅ HTTP / JSON</div>
+    <div class="tier">
+      <strong>2. Biznesa loģikas līmenis</strong>
+      <small>FastAPI · validācija, paroļu jaukšana (PBKDF2), sesijas · app/main.py, app/service.py</small>
+    </div>
+    <div class="arrow">⇅ SQL</div>
+    <div class="tier">
+      <strong>3. Datu līmenis</strong>
+      <small>Relāciju datubāze SQLite · tabulas users(id, username, email, password_hash, salt) un
+        sessions(token, user_id → users.id) · app/data.py</small>
+    </div>
+  </section>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const forms = { login: $("login-form"), register: $("register-form") };
+
+    function showTab(name) {
+      document.querySelectorAll("#tabs button").forEach((b) =>
+        b.classList.toggle("active", b.dataset.tab === name));
+      Object.entries(forms).forEach(([key, form]) => form.classList.toggle("hidden", key !== name));
+    }
+
+    function setMsg(el, text, ok) {
+      el.textContent = text;
+      el.className = "msg " + (ok ? "ok" : "error");
+    }
+
+    async function api(path, options = {}) {
+      const token = localStorage.getItem("token");
+      const headers = { "Content-Type": "application/json" };
+      if (token) headers.Authorization = "Bearer " + token;
+      const res = await fetch(path, { ...options, headers });
+      const data = res.status === 204 ? null : await res.json();
+      if (!res.ok) {
+        const detail = Array.isArray(data?.detail) ? "Pārbaudi ievadītos datus" : data?.detail;
+        throw new Error(detail || "Kļūda");
+      }
+      return data;
+    }
+
+    async function showProfile() {
+      try {
+        const user = await api("/api/me");
+        $("profile-name").textContent = user.username;
+        $("profile-email").textContent = user.email;
+        $("tabs").classList.add("hidden");
+        Object.values(forms).forEach((f) => f.classList.add("hidden"));
+        $("profile").classList.remove("hidden");
+      } catch {
+        localStorage.removeItem("token");
+      }
+    }
+
+    $("tabs").addEventListener("click", (e) => {
+      if (e.target.dataset.tab) showTab(e.target.dataset.tab);
+    });
+
+    forms.login.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const body = Object.fromEntries(new FormData(forms.login));
+      try {
+        const { token } = await api("/api/login", { method: "POST", body: JSON.stringify(body) });
+        localStorage.setItem("token", token);
+        forms.login.reset();
+        setMsg($("login-msg"), "", true);
+        await showProfile();
+      } catch (err) {
+        setMsg($("login-msg"), err.message, false);
+      }
+    });
+
+    forms.register.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const body = Object.fromEntries(new FormData(forms.register));
+      try {
+        await api("/api/register", { method: "POST", body: JSON.stringify(body) });
+        forms.register.reset();
+        showTab("login");
+        setMsg($("login-msg"), "Konts izveidots. Tagad vari pieslēgties.", true);
+      } catch (err) {
+        setMsg($("register-msg"), err.message, false);
+      }
+    });
+
+    $("logout").addEventListener("click", async () => {
+      try { await api("/api/logout", { method: "POST" }); } catch {}
+      localStorage.removeItem("token");
+      $("profile").classList.add("hidden");
+      $("tabs").classList.remove("hidden");
+      showTab("login");
+    });
+
+    if (localStorage.getItem("token")) showProfile();
+  </script>
+</body>
+</html>
